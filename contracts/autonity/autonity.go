@@ -10,7 +10,6 @@ import (
 	"github.com/clearmatics/autonity/core/vm"
 	"github.com/clearmatics/autonity/log"
 	"github.com/clearmatics/autonity/params"
-	"math"
 	"math/big"
 	"reflect"
 	"sort"
