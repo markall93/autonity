@@ -108,20 +108,10 @@ func (c *core) Stop() error {
 }
 
 func (c *core) subscribeEvents() {
-	s := c.backend.Subscribe(events.MessageEvent{}, backlogEvent{})
-	c.messageEventSub = s
-
-	s1 := c.backend.Subscribe(events.NewUnminedBlockEvent{})
-	c.newUnminedBlockEventSub = s1
-
-	s2 := c.backend.Subscribe(TimeoutEvent{})
-	c.timeoutEventSub = s2
-
-	s3 := c.backend.Subscribe(events.CommitEvent{})
-	c.committedSub = s3
-
-	s4 := c.backend.Subscribe(events.SyncEvent{})
-	c.syncEventSub = s4
+	c.newUnminedBlockEventSub = c.backend.Subscribe(events.NewUnminedBlockEvent{})
+	c.timeoutEventSub = c.backend.Subscribe(TimeoutEvent{})
+	c.committedSub = c.backend.Subscribe(events.CommitEvent{})
+	c.syncEventSub = c.backend.Subscribe(events.SyncEvent{})
 }
 
 // Unsubscribe all messageEventSub
@@ -169,33 +159,16 @@ eventLoop:
 				break eventLoop
 			}
 			// A real ev arrived, process interesting content
-			switch e := ev.Data.(type) {
-			case events.MessageEvent:
-				if len(e.Payload) == 0 {
+			if messageE, ok := ev.Data.(events.MessageEvent); ok {
+				if len(messageE.Payload) == 0 {
 					c.logger.Error("core.handleConsensusEvents Get message(MessageEvent) empty payload")
 				}
 
-				if err := c.handleMsg(ctx, e.Payload); err != nil {
+				if err := c.handleMsg(ctx, messageE.Payload); err != nil {
 					c.logger.Debug("core.handleConsensusEvents Get message(MessageEvent) payload failed", "err", err)
 					continue
 				}
-				c.backend.Gossip(ctx, c.valSet.Copy(), e.Payload)
-			case backlogEvent:
-				// No need to check signature for internal messages
-				c.logger.Debug("Started handling backlogEvent")
-				err := c.handleCheckedMsg(ctx, e.msg, e.src)
-				if err != nil {
-					c.logger.Debug("core.handleConsensusEvents handleCheckedMsg message failed", "err", err)
-					continue
-				}
-
-				p, err := e.msg.Payload()
-				if err != nil {
-					c.logger.Debug("core.handleConsensusEvents Get message payload failed", "err", err)
-					continue
-				}
-
-				c.backend.Gossip(ctx, c.valSet.Copy(), p)
+				c.backend.Gossip(ctx, c.valSet.Copy(), messageE.Payload)
 			}
 		case ev, ok := <-c.timeoutEventSub.Chan():
 			if !ok {
@@ -215,8 +188,7 @@ eventLoop:
 			if !ok {
 				break eventLoop
 			}
-			switch ev.Data.(type) {
-			case events.CommitEvent:
+			if _, ok := ev.Data.(events.CommitEvent); ok {
 				c.handleCommit(ctx)
 			}
 		case <-ctx.Done():
