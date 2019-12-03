@@ -108,6 +108,7 @@ func (c *core) Stop() error {
 }
 
 func (c *core) subscribeEvents() {
+	c.messageEventSub = c.backend.Subscribe(events.MessageEvent{})
 	c.newUnminedBlockEventSub = c.backend.Subscribe(events.NewUnminedBlockEvent{})
 	c.timeoutEventSub = c.backend.Subscribe(TimeoutEvent{})
 	c.committedSub = c.backend.Subscribe(events.CommitEvent{})
@@ -266,11 +267,12 @@ func (c *core) handleCheckedMsg(ctx context.Context, msg *Message, sender valida
 	testBacklog := func(err error) error {
 		// We want to store only future messages in backlog
 		if err == errFutureHeightMessage {
-			logger.Debug("Storing future height message in backlog")
-			c.storeBacklog(msg, sender)
+			// Ignore future height messages
+			logger.Debug("Future height message, ignoring")
 		} else if err == errFutureRoundMessage {
+			// TODO: Add message to relevant round state
 			logger.Debug("Storing future round message in backlog")
-			c.storeBacklog(msg, sender)
+
 			//We cannot move to a round in a new height without receiving a new block
 			var msgRound int64
 			if msg.Code == msgProposal {
@@ -296,8 +298,8 @@ func (c *core) handleCheckedMsg(ctx context.Context, msg *Message, sender valida
 				c.startRound(ctx, big.NewInt(msgRound))
 			}
 		} else if err == errFutureStepMessage {
+			// TODO: remove this case
 			logger.Debug("Storing future step message in backlog")
-			c.storeBacklog(msg, sender)
 		}
 
 		return err
@@ -318,4 +320,29 @@ func (c *core) handleCheckedMsg(ctx context.Context, msg *Message, sender valida
 	}
 
 	return errInvalidMessage
+}
+
+// checkMessage checks the message step
+// return errInvalidMessage if the message is invalid
+// return errFutureHeightMessage if the message view is larger than currentRoundState view
+// return errOldHeightMessage if the message view is smaller than currentRoundState view
+// return errFutureStepMessage if we are at the same view but at the propose step and it's a voting message.
+func (c *core) checkMessage(round *big.Int, height *big.Int, step Step) error {
+	if height == nil || round == nil {
+		return errInvalidMessage
+	}
+
+	if height.Cmp(c.currentRoundState.Height()) > 0 {
+		return errFutureHeightMessage
+	} else if height.Cmp(c.currentRoundState.Height()) < 0 {
+		return errOldHeightMessage
+	} else if round.Cmp(c.currentRoundState.Round()) > 0 {
+		return errFutureRoundMessage
+	} else if round.Cmp(c.currentRoundState.Round()) < 0 {
+		return errOldRoundMessage
+	} else if c.currentRoundState.step == propose && step > propose {
+		return errFutureStepMessage
+	}
+
+	return nil
 }

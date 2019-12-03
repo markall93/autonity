@@ -375,7 +375,6 @@ func (c *core) acceptVote(roundState *roundState, step Step, hash common.Hash, m
 
 func (c *core) setStep(step Step) {
 	c.currentRoundState.SetStep(step)
-	c.processBacklog()
 }
 
 func (c *core) stopFutureProposalTimer() {
